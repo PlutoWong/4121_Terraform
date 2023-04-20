@@ -4,7 +4,7 @@ With Anthos Multi-Cloud, you can create Kubernetes clusters in both AWS and Azur
 
 Checkout the different folders here for a Terraform based quickstart for setting up GKE on AWS and Azure. For more information, read the official documentation for [Anthos Multi-Cloud](https://cloud.google.com/anthos/clusters/docs/multi-cloud).
 
-- [Run GKE on AWS](/AWS)
+
 - [Run GKE on Azure](/Azure)
 # 4121_Terraform
 # 4121_Terraform
