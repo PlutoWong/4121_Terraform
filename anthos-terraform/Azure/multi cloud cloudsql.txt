@@ -1,0 +1,183 @@
+# Set up the GCP and Azure providers
+provider "google" {
+  project = "<your-gcp-project>"
+  region  = "<your-gcp-region>"
+}
+
+provider "azurerm" {
+  subscription_id = "<your-azure-subscription-id>"
+  client_id       = "<your-azure-client-id>"
+  client_secret   = "<your-azure-client-secret>"
+  tenant_id       = "<your-azure-tenant-id>"
+}
+
+# Define variables
+variable "db_instance_name" {
+  default = "my-cloud-sql-instance"
+}
+
+# Define the Cloud SQL instance
+resource "google_sql_database_instance" "instance_name" {
+  name             = var.db_instance_name
+  region           = "<your-gcp-region>"
+  database_version = "POSTGRES_13"
+  settings {
+    tier = "db-f1-micro"
+    ip_configuration {
+      authorized_networks {
+        name = "kubernetes"
+        value = "<your-gke-cluster-cidr>"
+      }
+      dynamic "require_ssl" {
+        for_each = [true]
+        content {
+          value = "true"
+        }
+      }
+    }
+  }
+}
+
+# Define the Kubernetes deployment with the Cloud SQL proxy
+resource "kubernetes_deployment" "cloudsql_proxy" {
+  metadata {
+    name = "cloudsql-proxy"
+  }
+  spec {
+    selector {
+      match_labels = {
+        app = "cloudsql-proxy"
+      }
+    }
+    template {
+      metadata {
+        labels = {
+          app = "cloudsql-proxy"
+        }
+      }
+      spec {
+        containers {
+          name = "cloudsql-proxy"
+          image = "gcr.io/cloudsql-docker/gce-proxy:1.23.0"
+          command = ["/cloud_sql_proxy",
+              "-instances=<your-project-id>:<your-region-name>:<your-instance-name>=tcp:5432"
+              "-credential_file=/secrets/cloudsql/credentials.json"]
+          ports {
+            container_port = 5432
+          }
+          volume_mounts {
+            mount_path = "/secrets/cloudsql"
+            name = "cloudsql-instance-credentials"
+            read_only = true
+          }
+        }
+        volumes {
+          name = "cloudsql-instance-credentials"
+          secret {
+            secret_name = "<your-secret-name>"
+            items {
+              key = "credentials.json"
+              path = "credentials.json"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+# Define the Kubernetes service for the Cloud SQL proxy
+resource "kubernetes_service" "cloudsql_proxy" {
+  metadata {
+    name = "cloudsql-proxy"
+  }
+  spec {
+    selector = {
+      app = "cloudsql-proxy"
+    }
+    ports {
+      port = 5432
+      target_port = 5432
+    }
+    type = "ClusterIP"
+  }
+}
+
+# Create an Azure PostgresSQL server
+resource "azurerm_postgresql_server" "postgresql" {
+  name         = var.db_instance_name
+  location     = "<your-azure-region>"
+  resource_group_name = "<your-azure-resource-group>"
+  version      = "13"
+  ssl_enforcement = "Enabled"
+  administrator_login          = "<your-admin-username>"
+  administrator_login_password = "<your-admin-password>"
+  auto_grow_enabled = true
+  backup_retention_days = 7
+  geo_redundant_backup_enabled = true
+}
+
+# Define the Azure Kubernetes deployment with the Cloud SQL proxy
+resource "kubernetes_deployment" "azure_cloudsql_proxy" {
+  metadata {
+    name = "cloudsql-proxy"
+  }
+  spec {
+    selector {
+      match_labels = {
+        app = "cloudsql-proxy"
+      }
+    }
+    template {
+      metadata {
+        labels = {
+          app = "cloudsql-proxy"
+        }
+      }
+      spec {
+        containers {
+          name = "cloudsql-proxy"
+          image = "gcr.io/cloudsql-docker/gce-proxy:1.23.0"
+          command = ["/cloud_sql_proxy",
+            `-instances=<your-azure-database-hostname>=tcp:5432`
+            `-credential_file=/secrets/cloudsql/credentials.json"]
+          ports {
+            container_port = 5432
+          }
+          volume_mounts {
+            mount_path = "/secrets/cloudsql"
+            name = "cloudsql-instance-credentials"
+            read_only = true
+          }
+        }
+        volumes {
+          name = "cloudsql-instance-credentials"
+          secret {
+            secret_name = "<your-secret-name>"
+            items {
+              key = "credentials.json"
+              path = "credentials.json"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+# Define the Kubernetes service for the Azure Cloud SQL proxy
+resource "kubernetes_service" "azure_cloudsql_proxy" {
+  metadata {
+    name = "cloudsql-proxy"
+  }
+  spec {
+    selector = {
+      app = "cloudsql-proxy"
+    }
+    ports {
+      port = 5432
+      target_port = 5432
+    }
+    type = "ClusterIP"
+  }
+}
